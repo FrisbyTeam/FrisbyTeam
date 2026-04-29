@@ -873,7 +873,7 @@ if __name__ == "__main__":
     asyncio.run(main())
   
 @dp.callback_query(lambda c: c.data.startswith("fb_"))
-   async def fb_bookmaker_selected(call: types.CallbackQuery, state: FSMContext):
+async def fb_bookmaker_selected(call: types.CallbackQuery, state: FSMContext):
        safe_id = call.data[3:]
        bk_name = next((b for b in BOOKMAKERS if b.replace(" ", "").replace(".", "").lower()[:15] == safe_id), call.data)
        await state.update_data(bookmaker=bk_name)
@@ -881,14 +881,14 @@ if __name__ == "__main__":
        await state.set_state(AppStates.fb_sport)
        await call.answer()
 
-   @dp.message(AppStates.fb_sport)
-   async def fb_sport_input(message: types.Message, state: FSMContext):
+@dp.message(AppStates.fb_sport)
+async def fb_sport_input(message: types.Message, state: FSMContext):
        await state.update_data(sport=message.text)
        await message.answer("💰 Введи сумму фрибета:")
        await state.set_state(AppStates.fb_amount)
 
-   @dp.message(AppStates.fb_amount)
-   async def fb_amount_input(message: types.Message, state: FSMContext):
+@dp.message(AppStates.fb_amount)
+async def fb_amount_input(message: types.Message, state: FSMContext):
        if not message.text.replace('.', '', 1).isdigit():
            return await message.answer("Введи число, например: 500")
        await state.update_data(freebet_amount=float(message.text))
