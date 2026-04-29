@@ -865,7 +865,6 @@ async def freebet_save(message: types.Message, state: FSMContext):
         await db.commit()
     await message.answer(f"✅ Фрибет {data.get('bk')} на {amt}₽ добавлен в пул! Теперь он доступен в разделе «Мои ставки» → «🎁 Фрибет».")
     await state.clear()
-
 async def main():
     await init_db()
     print("✅ Бот запущен. Ожидает сообщений...")
