@@ -28,6 +28,7 @@ class AppStates(StatesGroup):
     calc_result = State()
     dep_amount = State()
     wd_amount = State()
+    fb_amount = State()
     freebet_menu = State()      # Для внесения фрибета
     fb_amount_issue = State()   # Для ввода суммы при внесении
     fb_select_use = State()     # Для выбора внесённого фрибета при ставке
