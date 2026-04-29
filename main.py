@@ -837,7 +837,14 @@ async def cmd_freebet(message: types.Message, state: FSMContext):
     kb.adjust(2)
     await message.answer("📚 Выбери букмекера, у которого получен фрибет:", reply_markup=kb.as_markup())
     await state.set_state(AppStates.freebet_menu)
-    await state.update_data(action="add_freebet")
+
+@dp.callback_query(F.data.startswith("fb_add_bk_"), AppStates.freebet_menu)
+async def freebet_add_bk(call: types.CallbackQuery, state: FSMContext):
+    bk_name = call.data.split("fb_add_bk_", 1)[1]
+    await state.update_data(bk=bk_name)
+    await call.message.answer("💰 Введи сумму фрибета:")
+    await state.set_state(AppStates.fb_amount)
+    await call.answer()
 
 @dp.message(AppStates.fb_amount)
 async def freebet_save(message: types.Message, state: FSMContext):
