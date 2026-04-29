@@ -426,7 +426,7 @@ async def render_dep_history(call, page):
     if not rows and page == 0:
         await call.message.answer("📭 История депозитов пуста.", reply_markup=deposit_submenu_kb())
         return
-      has_more = len(rows) > PAGE_SIZE
+    has_more = len(rows) > PAGE_SIZE
     rows = rows[:PAGE_SIZE]
     kb = InlineKeyboardBuilder()
     for did, bk, am, dt in rows:
