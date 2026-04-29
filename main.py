@@ -871,6 +871,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+  
 @dp.callback_query(lambda c: c.data.startswith("fb_"))
    async def fb_bookmaker_selected(call: types.CallbackQuery, state: FSMContext):
        safe_id = call.data[3:]
