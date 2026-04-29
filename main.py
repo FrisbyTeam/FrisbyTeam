@@ -100,7 +100,7 @@ async def show_main(call: types.CallbackQuery, state: FSMContext):
     await call.message.answer("Выберите раздел:", reply_markup=main_menu_kb())
     await call.answer()
 
-@dp.message(F.text == "Ставка")
+@dp.message(F.text == "Мои ставки")
 async def bet_submenu(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Что вы хотите сделать?", reply_markup=bet_submenu_kb())
@@ -375,7 +375,7 @@ def deposit_submenu_kb():
     kb.adjust(1)
     return kb.as_markup()
 
-@dp.message(F.text == "Депозит")
+@dp.message(F.text == "Мои депозиты")
 async def deposit_submenu(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Что вы хотите сделать?", reply_markup=deposit_submenu_kb())
@@ -490,7 +490,7 @@ def withdrawal_submenu_kb():
     kb.adjust(1)
     return kb.as_markup()
 
-@dp.message(F.text == "Вывод")
+@dp.message(F.text == "Мои выводы")
 async def withdrawal_submenu(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Что вы хотите сделать?", reply_markup=withdrawal_submenu_kb())
@@ -829,7 +829,7 @@ async def fb_amount_input(message: types.Message, state: FSMContext):
     await message.answer("📈 Введи коэффициент (например: 2.10):")
     await state.set_state(AppStates.bet_odds)
 
-@dp.message(F.text == "Фрибеты")
+@dp.message(F.text == "Мои фрибеты")
 async def cmd_freebet(message: types.Message, state: FSMContext):
     kb = InlineKeyboardBuilder()
     for bk in BOOKMAKERS:
