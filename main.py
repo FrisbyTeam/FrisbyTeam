@@ -294,7 +294,8 @@ async def render_bet_history(call, page):
         emoji = "🟢" if res == "Выигрыш" else ("🔴" if res == "Проигрыш" else ("🔄" if res == "Возврат" else "⏳"))
         kb.button(text=f"🗑️ #{bid} | {bk} | {am:,.0f}₽ @ {od} | {emoji} | {fmt_date(date)}", callback_data=f"bet_del_{bid}")
     kb.adjust(1)
-    add_nav_buttons(kb, page, has_more, "bet_hist_p_", "back_to_bet_menu")    await call.message.answer(f"📊 <b>История ставок</b> — страница {page + 1}\nНажмите на запись, чтобы удалить:",
+    add_nav_buttons(kb, page, has_more, "bet_hist_p_", "back_to_bet_menu")    
+    await call.message.answer(f"📊 <b>История ставок</b> — страница {page + 1}\nНажмите на запись, чтобы удалить:",
                               reply_markup=kb.as_markup(), parse_mode="HTML")
 
 @dp.callback_query(F.data == "bet_history")
@@ -392,7 +393,8 @@ async def deposit_add_start(call: types.CallbackQuery, state: FSMContext):
 async def process_dep_bookmaker(call: types.CallbackQuery, state: FSMContext):
     bc_name = call.data.split("dep_bc_", 1)[1]
     await state.update_data(deposit_bookmaker=bc_name)
-    await state.set_state(AppStates.dep_amount)    await call.message.edit_text("2️⃣ На какую сумму внесён депозит?\n(Введите сумму без пробелов и точек, копейки отделите запятой, например 1500,00)")
+    await state.set_state(AppStates.dep_amount)    
+    await call.message.edit_text("2️⃣ На какую сумму внесён депозит?\n(Введите сумму без пробелов и точек, копейки отделите запятой, например 1500,00)")
     await call.answer()
 
 @dp.message(AppStates.dep_amount)
