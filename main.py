@@ -803,7 +803,13 @@ async def fb_bookmaker_selected(call: types.CallbackQuery, state: FSMContext):
     safe_id = call.data[10:]
     bk_name = next((b for b in BOOKMAKERS if b.replace(" ", "").replace(".", "").lower()[:15] == safe_id), "Unknown")
     await state.update_data(bookmaker=bk_name)
-    await call.message.answer("🏆 Введи вид спорта (например: Футбол, Хоккей, Теннис):")
+
+    kb = InlineKeyboardBuilder()
+    for sport in SPORTS:
+        kb.button(text=sport, callback_data=f"fb_sp_{sport}")
+    kb.adjust(2)
+
+    await call.message.answer("🏆 Выбери вид спорта:", reply_markup=kb.as_markup())
     await state.set_state(AppStates.fb_sport)
     await call.answer()
 
