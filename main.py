@@ -813,11 +813,13 @@ async def fb_bookmaker_selected(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(AppStates.fb_sport)
     await call.answer()
 
-@dp.message(AppStates.fb_sport)
-async def fb_sport_input(message: types.Message, state: FSMContext):
-    await state.update_data(sport=message.text)
-    await message.answer("💰 Введи сумму фрибета:")
+@dp.callback_query(F.data.startswith("fb_sp_"), AppStates.fb_sport)
+async def fb_sport_selected(call: types.CallbackQuery, state: FSMContext):
+    sport_name = call.data.split("fb_sp_", 1)[1]
+    await state.update_data(sport=sport_name)
+    await call.message.answer("💰 Введи сумму фрибета:")
     await state.set_state(AppStates.fb_amount)
+    await call.answer()
 
 @dp.message(AppStates.fb_amount)
 async def fb_amount_input(message: types.Message, state: FSMContext):
