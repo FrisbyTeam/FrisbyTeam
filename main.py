@@ -125,21 +125,21 @@ async def process_bet_type_choice(call: types.CallbackQuery, state: FSMContext):
     is_fb = call.data == "bet_type_freebet"
     await state.update_data(is_freebet_flag=is_fb)
 
-        if is_fb:
-        async with aiosqlite.connect("stats.db") as db:
-            cur = await db.execute("SELECT id, bookmaker, amount FROM freebets_pool WHERE user_id=? AND status='active'", (call.from_user.id,))
+    if is_fb:
+    async with aiosqlite.connect("stats.db") as db:
+    cur = await db.execute("SELECT id, bookmaker, amount FROM freebets_pool WHERE user_id=? AND status='active'", (call.from_user.id,))
             fbs = await cur.fetchall()
 
-        if not fbs:
+    if not fbs:
             await call.message.answer("Не найдено внесённых фрибетов. Используйте \"Мои фрибеты\" в главном меню.")
             await call.answer()
             return
 
         kb = InlineKeyboardBuilder()
-        for fb_id, bk, amt in fbs:
+    for fb_id, bk, amt in fbs:
         kb.button(text=f"{bk} — {int(amt)}₽", callback_data=f"fb_pool_{fb_id}")
         kb.adjust(2)
-        await call.message.answer("💳 Выбери доступный фрибет:", reply_markup=kb.as_markup())
+    await call.message.answer("💳 Выбери доступный фрибет:", reply_markup=kb.as_markup())
     else:
         q = BET_QUESTIONS[0]
         kb = InlineKeyboardBuilder()
