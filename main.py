@@ -146,7 +146,8 @@ async def choose_bet_type(call: types.CallbackQuery, state: FSMContext):
 async def process_inline_step(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     step = data.get("step", 0)
-    key = BET_QUESTIONS[step]["key"]    value = call.data.split("_", 1)[1]
+    key = BET_QUESTIONS[step]["key"]    
+    value = call.data.split("_", 1)[1]
     await state.update_data(**{key: value}, step=step + 1)
     if step + 1 < len(BET_QUESTIONS):
         q = BET_QUESTIONS[step + 1]
