@@ -32,22 +32,29 @@ class AppStates(StatesGroup):
     dep_amount = State()
     # Выводы
     wd_amount = State()
+    # Фрибеты
+    type_choice = State()
     fb_sport = State()
+    fb_amount = State()
+    freebet_menu = State()
 
 # 🗄️ База данных
 async def init_db():
     async with aiosqlite.connect("stats.db") as db:
         await db.execute("""CREATE TABLE IF NOT EXISTS bets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, bookmaker TEXT, market TEXT, bet_type TEXT, sport TEXT,
-            amount REAL, odds REAL, status TEXT DEFAULT 'uncalculated',
-            result TEXT, payout REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, bookmaker TEXT, market TEXT, bet_type TEXT, sport TEXT,
+            amount REAL, odds REAL, status TEXT DEFAULT 'uncalculated', result TEXT, payout REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+        # Безопасно добавляем колонки, если их нет
+        try: await db.execute("ALTER TABLE bets ADD COLUMN is_freebet INTEGER DEFAULT 0")
+        except: pass
+        try: await db.execute("ALTER TABLE bets ADD COLUMN freebet_amount REAL DEFAULT 0")        except: pass
+        
         await db.execute("""CREATE TABLE IF NOT EXISTS deposits (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, bookmaker TEXT, amount REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, bookmaker TEXT, amount REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
         await db.execute("""CREATE TABLE IF NOT EXISTS withdrawals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, bookmaker TEXT, amount REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, bookmaker TEXT, amount REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+        await db.execute("""CREATE TABLE IF NOT EXISTS freebets_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, bookmaker TEXT, amount REAL, date TEXT, status TEXT DEFAULT 'issued')""")
         await db.commit()
 
 # 🛠️ Хелперы
@@ -89,8 +96,7 @@ async def cmd_start(message: types.Message):
     kb.button(text="НАЧАТЬ", callback_data="go_main")
     await message.answer(
         "Привет! Я бот, которого сделал человек, который долго искал какой-то сервис, что бы отслеживать свою статистику по ставкам, и, так как ничего подходящего не было найдено, появился я! Давай же начнем наш путь!",
-        reply_markup=kb.as_markup()
-    )
+        reply_markup=kb.as_markup()    )
 
 @dp.callback_query(F.data == "go_main")
 async def show_main(call: types.CallbackQuery, state: FSMContext):
@@ -124,25 +130,22 @@ async def start_bet_flow(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(lambda c: c.data in ["bet_type_main", "bet_type_freebet"])
 async def choose_bet_type(call: types.CallbackQuery, state: FSMContext):
-    b_type = "main" if call.data == "bet_type_main" else "freebet"
-    await state.update_data(bet_type=b_type)
+    is_fb = call.data == "bet_type_freebet"
+    await state.update_data(is_freebet_flag=is_fb)
 
-    if b_type == "freebet":
+    if is_fb:
         kb = InlineKeyboardBuilder()
         for bk in BOOKMAKERS:
-            # Делаем callback_data безопасным для Telegram (≤64 байта)
             safe_id = bk.replace(" ", "").replace(".", "").lower()[:15]
-            kb.button(text=bk, callback_data=f"fb_{safe_id}")
+            kb.button(text=bk, callback_data=f"fb_choose_{safe_id}")
         kb.adjust(2)
         await call.message.answer("📚 Выбери букмекера, где получен фрибет:", reply_markup=kb.as_markup())
     else:
-        # Запускаем твой стандартный поток вопросов
         q = BET_QUESTIONS[0]
         kb = InlineKeyboardBuilder()
         for opt in q["opts"]:
             kb.button(text=opt, callback_data=f"{q['prefix']}_{opt}")
-        kb.adjust(2)
-        await call.message.answer(q["q"], reply_markup=kb.as_markup())
+        kb.adjust(2)        await call.message.answer(q["q"], reply_markup=kb.as_markup())
     await call.answer()
 
 @dp.callback_query(F.data.startswith(("bc_", "mkt_", "bt_", "sp_")))
@@ -187,12 +190,21 @@ async def process_bet_odds(message: types.Message, state: FSMContext):
         data = await state.get_data()
         data["odds"] = val
 
-        async with aiosqlite.connect("stats.db") as db:
-            await db.execute("INSERT INTO bets (user_id, bookmaker, market, bet_type, sport, amount, odds) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (data["user_id"], data["bookmaker"], data["market"], data["bet_type"], data["sport"], data["amount"], data["odds"]))
-            await db.commit()
+        # Для фрибетов ставим дефолтные значения полей БД
+        if data.get("is_freebet_flag"):
+            data.setdefault("market", "Линия")
+            data.setdefault("bet_type", "Одинар")
+            data.setdefault("sport", "Другое")
+        is_fb = data.get("is_freebet_flag", False)
+        fb_amt = data.get("freebet_amount", 0.0)
 
         async with aiosqlite.connect("stats.db") as db:
+            await db.execute("""INSERT INTO bets (user_id, bookmaker, market, bet_type, sport, amount, odds, is_freebet, freebet_amount) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (data["user_id"], data["bookmaker"], data["market"], data["bet_type"], data["sport"], 
+                 data["amount"], data["odds"], 1 if is_fb else 0, fb_amt))
+            await db.commit()
+
             cur = await db.execute("SELECT id FROM bets ORDER BY id DESC LIMIT 1")
             bet_id = (await cur.fetchone())[0]
 
@@ -231,8 +243,7 @@ async def show_uncalculated(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("calc_"), AppStates.calc_select)
 async def select_bet(call: types.CallbackQuery, state: FSMContext):
     bet_id = int(call.data.split("_")[1])
-    await state.update_data(bet_id=bet_id)
-    await state.set_state(AppStates.calc_result)
+    await state.update_data(bet_id=bet_id)    await state.set_state(AppStates.calc_result)
 
     kb = InlineKeyboardBuilder()
     kb.button(text="🟢 Выигрыш", callback_data="res_win")
@@ -250,20 +261,18 @@ async def process_result(call: types.CallbackQuery, state: FSMContext):
     res_code = call.data.split("_")[1]
 
     async with aiosqlite.connect("stats.db") as db:
-        # Достаём данные, включая новые колонки для фрибетов
         cur = await db.execute("SELECT amount, odds, is_freebet, freebet_amount FROM bets WHERE id=?", (bet_id,))
         row = await cur.fetchone()
         am, od, is_fb, fb_amt = (row[0], row[1], row[2] or 0, row[3] or 0.0)
 
-    # 🧮 РАСЧЁТ ПО ТВОИМ ПРАВИЛАМ
     if is_fb:
         if res_code == "win":
             payout = (fb_amt * od) - fb_amt
         else:
-            payout = 0.0  # Фрибет сгорает при проигрыше/возврате
+            payout = 0.0
     else:
         if res_code == "win":
-            payout = am * (od - 1)  # Чистый профит
+            payout = am * (od - 1)
         elif res_code == "loss":
             payout = -am
         else:
@@ -283,8 +292,7 @@ async def process_result(call: types.CallbackQuery, state: FSMContext):
 PAGE_SIZE = 10
 
 def add_nav_buttons(kb, page, has_more, prefix, back_cb):
-    if page > 0 and has_more:
-        kb.row()
+    if page > 0 and has_more:        kb.row()
         kb.button(text="◀️ Назад", callback_data=f"{prefix}{page - 1}")
         kb.button(text="Вперёд ▶️", callback_data=f"{prefix}{page + 1}")
     elif page > 0:
@@ -333,8 +341,7 @@ async def bet_history_page(call: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("bet_del_"))
 async def bet_del_ask(call: types.CallbackQuery):
     bid = int(call.data.split("bet_del_", 1)[1])
-    async with aiosqlite.connect("stats.db") as db:
-        cur = await db.execute(
+    async with aiosqlite.connect("stats.db") as db:        cur = await db.execute(
             "SELECT bookmaker, sport, amount, odds, result, payout, created_at FROM bets WHERE id=? AND user_id=?",
             (bid, call.from_user.id))
         row = await cur.fetchone()
@@ -383,8 +390,7 @@ async def process_clear_yes(call: types.CallbackQuery):
     await call.message.answer("Выберите раздел:", reply_markup=main_menu_kb())
     await call.answer()
 
-@dp.callback_query(F.data == "back_to_bet_menu")
-async def back_to_bet(call: types.CallbackQuery, state: FSMContext):
+@dp.callback_query(F.data == "back_to_bet_menu")async def back_to_bet(call: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await call.message.edit_text("Что вы хотите сделать?", reply_markup=bet_submenu_kb())
     await call.answer()
@@ -433,8 +439,7 @@ async def process_dep_amount(message: types.Message, state: FSMContext):
                              (message.from_user.id, data["deposit_bookmaker"], val))
             await db.commit()
         await state.clear()
-        kb = InlineKeyboardBuilder()
-        kb.button(text="🏠 Главное меню", callback_data="go_main")
+        kb = InlineKeyboardBuilder()        kb.button(text="🏠 Главное меню", callback_data="go_main")
         await message.answer(f"✅ Депозит в <b>{data['deposit_bookmaker']}</b> на сумму <b>{val:,.2f} ₽</b> учтён.", reply_markup=kb.as_markup(), parse_mode="HTML")
     except ValueError:
         await message.answer("⚠️ Неверный формат. Введите число > 0. Пример: 1500,00")
@@ -443,7 +448,7 @@ async def render_dep_history(call, page):
     offset = page * PAGE_SIZE
     async with aiosqlite.connect("stats.db") as db:
         cur = await db.execute(
-            "SELECT id, bookmaker, amount, created_at FROM deposits WHERE user_id=? "
+          "SELECT id, bookmaker, amount, created_at FROM deposits WHERE user_id=? "
             "ORDER BY id DESC LIMIT ? OFFSET ?",
             (call.from_user.id, PAGE_SIZE + 1, offset))
         rows = await cur.fetchall()
@@ -863,6 +868,62 @@ async def stats_bk_month(call: types.CallbackQuery):
     await bot.send_photo(call.from_user.id, BufferedInputFile(buf.read(), filename=f"stats_{bk}.png"))
     await call.answer()
 
+# 🎁 ФРИБЕТЫ: ОБРАБОТЧИКИ
+@dp.callback_query(F.data.startswith("fb_choose_"))
+async def fb_bookmaker_selected(call: types.CallbackQuery, state: FSMContext):
+    safe_id = call.data[10:]
+    bk_name = next((b for b in BOOKMAKERS if b.replace(" ", "").replace(".", "").lower()[:15] == safe_id), "Unknown")
+    await state.update_data(bookmaker=bk_name)
+    await call.message.answer("🏆 Введи вид спорта (например: Футбол, Хоккей, Теннис):")
+    await state.set_state(AppStates.fb_sport)
+    await call.answer()
+
+@dp.message(AppStates.fb_sport)
+async def fb_sport_input(message: types.Message, state: FSMContext):
+    await state.update_data(sport=message.text)
+    await message.answer("💰 Введи сумму фрибета:")
+    await state.set_state(AppStates.fb_amount)
+
+@dp.message(AppStates.fb_amount)
+async def fb_amount_input(message: types.Message, state: FSMContext):
+    if not message.text.replace('.', '', 1).isdigit():
+        return await message.answer("Введи число, например: 500")
+    await state.update_data(freebet_amount=float(message.text))
+    await message.answer("📈 Введи коэффициент (например: 2.10):")
+    await state.set_state(AppStates.bet_odds)
+
+@dp.message(F.text == "Фрибеты")
+async def cmd_freebet(message: types.Message, state: FSMContext):
+    kb = InlineKeyboardBuilder()
+    for bk in BOOKMAKERS:
+        safe_id = bk.replace(" ", "").replace(".", "").lower()[:15]
+        kb.button(text=bk, callback_data=f"fbi_{safe_id}")
+    kb.adjust(2)
+    await message.answer("📚 От какого букмекера получен фрибет?", reply_markup=kb.as_markup())
+    await state.set_state(AppStates.freebet_menu)
+
+@dp.callback_query(F.data.startswith("fbi_"), AppStates.freebet_menu)
+async def freebet_select_bk(call: types.CallbackQuery, state: FSMContext):
+    safe_id = call.data[4:]
+    bk_name = next((b for b in BOOKMAKERS if b.replace(" ", "").replace(".", "").lower()[:15] == safe_id), "Unknown")
+    await state.update_data(issue_bk=bk_name)
+    await call.message.answer("💰 Введи сумму выданного фрибета:")
+    await state.set_state(AppStates.fb_amount_issue)
+    await call.answer()
+
+@dp.message(state=AppStates.fb_amount_issue)
+async def freebet_save(message: types.Message, state: FSMContext):
+    if not message.text.replace('.', '', 1).isdigit():
+        return await message.answer("Введи число, например: 500")
+    data = await state.get_data()
+    amt = float(message.text)
+    async with aiosqlite.connect("stats.db") as db:
+        await db.execute("INSERT INTO freebets_log (user_id, bookmaker, amount, date) VALUES (?, ?, ?, ?)",
+                         (message.from_user.id, data.get("issue_bk", "Unknown"), amt, datetime.now().strftime("%Y-%m-%d")))
+        await db.commit()
+    await message.answer(f"✅ Фрибет от {data.get('issue_bk')} на {amt}₽ записан! Используй его через меню «🎯 Ставка» → «🎁 Фрибет».")
+    await state.clear()
+
 # 🚀 Запуск
 async def main():
     await init_db()
@@ -871,41 +932,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-  
-@dp.callback_query(lambda c: c.data.startswith("fb_"))
-async def fb_bookmaker_selected(call: types.CallbackQuery, state: FSMContext):
-       safe_id = call.data[3:]
-       bk_name = next((b for b in BOOKMAKERS if b.replace(" ", "").replace(".", "").lower()[:15] == safe_id), call.data)
-       await state.update_data(bookmaker=bk_name)
-       await call.message.answer("🏆 Введи вид спорта (например: Футбол, Хоккей, Теннис):")
-       await state.set_state(AppStates.fb_sport)
-       await call.answer()
-
-@dp.message(AppStates.fb_sport)
-async def fb_sport_input(message: types.Message, state: FSMContext):
-       await state.update_data(sport=message.text)
-       await message.answer("💰 Введи сумму фрибета:")
-       await state.set_state(AppStates.fb_amount)
-
-@dp.message(AppStates.fb_amount)
-async def fb_amount_input(message: types.Message, state: FSMContext):
-       if not message.text.replace('.', '', 1).isdigit():
-           return await message.answer("Введи число, например: 500")
-       await state.update_data(freebet_amount=float(message.text))
-       await message.answer("📈 Введи коэффициент (например: 2.10):")
-       await state.set_state(AppStates.bet_odds)
-
-@dp.message(F.text == "Фрибеты")
-async def cmd_freebet(message: types.Message, state: FSMContext):
-    kb = InlineKeyboardBuilder()
-    for bk in BOOKMAKERS:
-        safe_id = bk.replace(" ", "").replace(".", "").lower()[:15]
-        kb.button(text=bk, callback_data=f"fb_issue_{safe_id}")
-    kb.adjust(2)
-    await message.answer("📚 От какого букмекера получен фрибет?", reply_markup=kb.as_markup())
-    await state.set_state(AppStates.freebet_menu)
-
-@dp.message(F.text == "Моя статистика")
-async def cmd_stats(message: types.Message):
-    # Пока заглушка, реальную статистику с фрибетами подключим на следующем шаге
-    await message.answer("📊 Раздел статистики обновляется...")
