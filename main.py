@@ -56,7 +56,7 @@ async def init_db():
 
 def main_menu_kb():
     kb = ReplyKeyboardBuilder()
-    for txt in ["Ставка", "Депозит", "Вывод", "Фрибеты", "Моя статистика"]:
+    for txt in ["Мои ставки", "Мои депозиты", "Мои выводы", "Мои фрибеты", "Моя статистика"]:
         kb.button(text=txt)
     kb.adjust(2)
     return kb.as_markup(resize_keyboard=True)
