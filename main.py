@@ -829,14 +829,6 @@ async def fb_sport_selected(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(AppStates.fb_amount)
     await call.answer()
 
-@dp.message(AppStates.fb_amount)
-async def fb_amount_input(message: types.Message, state: FSMContext):
-    if not message.text.replace('.', '', 1).isdigit():
-        return await message.answer("Введи число, например: 500")
-    await state.update_data(freebet_amount=float(message.text))
-    await message.answer("📈 Введи коэффициент (например: 2.10):")
-    await state.set_state(AppStates.bet_odds)
-
 @dp.message(F.text == "Мои фрибеты")
 async def cmd_freebet(message: types.Message, state: FSMContext):
     kb = InlineKeyboardBuilder()
