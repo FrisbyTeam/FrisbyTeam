@@ -839,24 +839,21 @@ async def cmd_freebet(message: types.Message, state: FSMContext):
     await state.set_state(AppStates.freebet_menu)
     await state.update_data(action="add_freebet")
 
-@dp.callback_query(F.data.startswith("fb_add_bk_"), AppStates.freebet_menu)
-async def freebet_add_bk(call: types.CallbackQuery, state: FSMContext):
-    bk_name = call.data.split("fb_add_bk_", 1)[1]
-    await state.update_data(bk=bk_name)
-    await call.message.answer("💰 Введи сумму фрибета:")
-    await state.set_state(AppStates.fb_amount)
-    await call.answer()
-
-@dp.message(AppStates.fb_amount, lambda m: m.text.replace('.', '', 1).isdigit())
+@dp.message(AppStates.fb_amount)
 async def freebet_save(message: types.Message, state: FSMContext):
+    text = message.text.strip().replace(',', '.')
+    if not text.replace('.', '', 1).isdigit():
+        return await message.answer("⚠️ Введи число, например: 500 или 500.00")
+
     data = await state.get_data()
-    amt = float(message.text)
+    amt = float(text)
     async with aiosqlite.connect("stats.db") as db:
         await db.execute("INSERT INTO freebets_pool (user_id, bookmaker, amount) VALUES (?, ?, ?)",
                          (message.from_user.id, data.get("bk", "Unknown"), amt))
         await db.commit()
     await message.answer(f"✅ Фрибет {data.get('bk')} на {amt}₽ добавлен в пул! Теперь он доступен в разделе «Мои ставки» → «🎁 Фрибет».")
     await state.clear()
+  
 async def main():
     await init_db()
     print("✅ Бот запущен. Ожидает сообщений...")
