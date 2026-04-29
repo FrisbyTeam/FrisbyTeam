@@ -344,7 +344,8 @@ async def bet_del_confirm(call: types.CallbackQuery):
 
 @dp.callback_query(F.data == "bet_clear_ask")
 async def ask_clear(call: types.CallbackQuery):
-    kb = InlineKeyboardBuilder()    kb.button(text="🗑️ Да, удалить всё", callback_data="bet_clear_yes")
+    kb = InlineKeyboardBuilder()    
+    kb.button(text="🗑️ Да, удалить всё", callback_data="bet_clear_yes")
     kb.button(text="❌ Отмена", callback_data="back_to_bet_menu")
     kb.adjust(2)
     await call.message.answer("⚠️ <b>Внимание!</b>\nВы уверены, что хотите удалить всю историю ставок? Это действие нельзя отменить.", reply_markup=kb.as_markup(), parse_mode="HTML")
