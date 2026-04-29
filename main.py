@@ -856,7 +856,7 @@ async def freebet_add_bk(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
 
 @dp.message(AppStates.fb_amount, lambda m: m.text.replace('.', '', 1).isdigit())
-async def freebet_save_amount(message: types.Message, state: FSMContext):
+async def freebet_save(message: types.Message, state: FSMContext):
     data = await state.get_data()
     amt = float(message.text)
     async with aiosqlite.connect("stats.db") as db:
