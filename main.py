@@ -32,6 +32,7 @@ class AppStates(StatesGroup):
     dep_amount = State()
     # Выводы
     wd_amount = State()
+    fb_sport = State()
 
 # 🗄️ База данных
 async def init_db():
@@ -52,11 +53,11 @@ async def init_db():
 # 🛠️ Хелперы
 def main_menu_kb():
     kb = ReplyKeyboardBuilder()
-    for txt in ["Ставка", "Депозит", "Вывод", "Моя статистика"]:
+    for txt in ["Ставка", "Депозит", "Вывод", "Фрибеты", "Моя статистика"]:
         kb.button(text=txt)
     kb.adjust(2)
     return kb.as_markup(resize_keyboard=True)
-
+  
 def bet_submenu_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="➕ Внести ставку", callback_data="bet_add")
@@ -114,12 +115,34 @@ BET_QUESTIONS = [
 @dp.callback_query(F.data == "bet_add")
 async def start_bet_flow(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(user_id=call.from_user.id, step=0)
-    q = BET_QUESTIONS[0]
     kb = InlineKeyboardBuilder()
-    for opt in q["opts"]:
-        kb.button(text=opt, callback_data=f"{q['prefix']}_{opt}")
-    kb.adjust(2)
-    await call.message.answer(q["q"], reply_markup=kb.as_markup())
+    kb.button(text="💰 Основная сумма", callback_data="bet_type_main")
+    kb.button(text="🎁 Фрибет", callback_data="bet_type_freebet")
+    kb.adjust(1)
+    await call.message.answer("💰 Тип ставки:", reply_markup=kb.as_markup())
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data in ["bet_type_main", "bet_type_freebet"])
+async def choose_bet_type(call: types.CallbackQuery, state: FSMContext):
+    b_type = "main" if call.data == "bet_type_main" else "freebet"
+    await state.update_data(bet_type=b_type)
+
+    if b_type == "freebet":
+        kb = InlineKeyboardBuilder()
+        for bk in BOOKMAKERS:
+            # Делаем callback_data безопасным для Telegram (≤64 байта)
+            safe_id = bk.replace(" ", "").replace(".", "").lower()[:15]
+            kb.button(text=bk, callback_data=f"fb_{safe_id}")
+        kb.adjust(2)
+        await call.message.answer("📚 Выбери букмекера, где получен фрибет:", reply_markup=kb.as_markup())
+    else:
+        # Запускаем твой стандартный поток вопросов
+        q = BET_QUESTIONS[0]
+        kb = InlineKeyboardBuilder()
+        for opt in q["opts"]:
+            kb.button(text=opt, callback_data=f"{q['prefix']}_{opt}")
+        kb.adjust(2)
+        await call.message.answer(q["q"], reply_markup=kb.as_markup())
     await call.answer()
 
 @dp.callback_query(F.data.startswith(("bc_", "mkt_", "bt_", "sp_")))
@@ -227,23 +250,33 @@ async def process_result(call: types.CallbackQuery, state: FSMContext):
     res_code = call.data.split("_")[1]
 
     async with aiosqlite.connect("stats.db") as db:
-        cur = await db.execute("SELECT amount, odds FROM bets WHERE id=?", (bet_id,))
+        # Достаём данные, включая новые колонки для фрибетов
+        cur = await db.execute("SELECT amount, odds, is_freebet, freebet_amount FROM bets WHERE id=?", (bet_id,))
         row = await cur.fetchone()
-        am, od = row
+        am, od, is_fb, fb_amt = (row[0], row[1], row[2] or 0, row[3] or 0.0)
 
-    if res_code == "win":
-        payout, res_txt = am * od, "Выигрыш"
-    elif res_code == "loss":
-        payout, res_txt = 0.0, "Проигрыш"
+    # 🧮 РАСЧЁТ ПО ТВОИМ ПРАВИЛАМ
+    if is_fb:
+        if res_code == "win":
+            payout = (fb_amt * od) - fb_amt
+        else:
+            payout = 0.0  # Фрибет сгорает при проигрыше/возврате
     else:
-        payout, res_txt = am, "Возврат"
+        if res_code == "win":
+            payout = am * (od - 1)  # Чистый профит
+        elif res_code == "loss":
+            payout = -am
+        else:
+            payout = 0.0
+
+    res_txt = "Выигрыш" if res_code == "win" else ("Проигрыш" if res_code == "loss" else "Возврат")
 
     async with aiosqlite.connect("stats.db") as db:
         await db.execute("UPDATE bets SET status='calculated', result=?, payout=? WHERE id=?", (res_txt, payout, bet_id))
         await db.commit()
 
     await state.clear()
-    await call.message.answer(f"✅ Результат сохранен.\n📊 Выплата: <b>{payout:,.2f} ₽</b>", parse_mode="HTML")
+    await call.message.answer(f"✅ Результат сохранен.\n📊 Итог: <b>{payout:,.2f} ₽</b>", parse_mode="HTML")
     await call.answer()
 
 # 📜 ИСТОРИЯ СТАВОК
@@ -838,3 +871,40 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+@dp.callback_query(lambda c: c.data.startswith("fb_"))
+   async def fb_bookmaker_selected(call: types.CallbackQuery, state: FSMContext):
+       safe_id = call.data[3:]
+       bk_name = next((b for b in BOOKMAKERS if b.replace(" ", "").replace(".", "").lower()[:15] == safe_id), call.data)
+       await state.update_data(bookmaker=bk_name)
+       await call.message.answer("🏆 Введи вид спорта (например: Футбол, Хоккей, Теннис):")
+       await state.set_state(AppStates.fb_sport)
+       await call.answer()
+
+   @dp.message(AppStates.fb_sport)
+   async def fb_sport_input(message: types.Message, state: FSMContext):
+       await state.update_data(sport=message.text)
+       await message.answer("💰 Введи сумму фрибета:")
+       await state.set_state(AppStates.fb_amount)
+
+   @dp.message(AppStates.fb_amount)
+   async def fb_amount_input(message: types.Message, state: FSMContext):
+       if not message.text.replace('.', '', 1).isdigit():
+           return await message.answer("Введи число, например: 500")
+       await state.update_data(freebet_amount=float(message.text))
+       await message.answer("📈 Введи коэффициент (например: 2.10):")
+       await state.set_state(AppStates.bet_odds)
+
+@dp.message(F.text == "Фрибеты")
+async def cmd_freebet(message: types.Message, state: FSMContext):
+    kb = InlineKeyboardBuilder()
+    for bk in BOOKMAKERS:
+        safe_id = bk.replace(" ", "").replace(".", "").lower()[:15]
+        kb.button(text=bk, callback_data=f"fb_issue_{safe_id}")
+    kb.adjust(2)
+    await message.answer("📚 От какого букмекера получен фрибет?", reply_markup=kb.as_markup())
+    await state.set_state(AppStates.freebet_menu)
+
+@dp.message(F.text == "Моя статистика")
+async def cmd_stats(message: types.Message):
+    # Пока заглушка, реальную статистику с фрибетами подключим на следующем шаге
+    await message.answer("📊 Раздел статистики обновляется...")
