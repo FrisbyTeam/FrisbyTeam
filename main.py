@@ -96,7 +96,8 @@ async def cmd_start(message: types.Message):
 
 @dp.callback_query(F.data == "go_main")
 async def show_main(call: types.CallbackQuery, state: FSMContext):
-    await state.clear()    await call.message.answer("Выберите раздел:", reply_markup=main_menu_kb())
+    await state.clear()    
+    await call.message.answer("Выберите раздел:", reply_markup=main_menu_kb())
     await call.answer()
 
 @dp.message(F.text == "Ставка")
