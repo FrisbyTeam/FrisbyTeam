@@ -12,11 +12,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from stats_image import render_stats_image, render_empty_image
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-from aiohttp import TCPConnector
-from aiogram.client.session.aiohttp import AiohttpSession
-connector = TCPConnector(family=2)  # 2 = AF_INET = IPv4 only
-session = AiohttpSession(connector=connector)
-bot = Bot(token=BOT_TOKEN, session=session)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 BOOKMAKERS = ["Фонбет", "Pari", "BetBoom", "Marathon.bet", "OlimpBet", "BetCity",
